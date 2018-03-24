@@ -1,0 +1,8 @@
+[
+null,
+{"id":1,"battlerName":"Actor3_7","characterIndex":2,"characterName":"Actor3","classId":1,"equips":[0,0,0,0,0],"faceIndex":2,"faceName":"Actor3","traits":[],"initialLevel":1,"maxLevel":99,"name":"逆风尿","nickname":"逆风尿","note":"","profile":"逆风尿， 性格古怪。时常对着逆风尿尿。"},
+{"id":2,"battlerName":"Actor3_5","characterIndex":4,"characterName":"Actor3","classId":1,"equips":[0,0,0,0,0],"faceIndex":4,"faceName":"Actor3","traits":[],"initialLevel":1,"maxLevel":99,"name":"抽风CRAZY","nickname":"抽风CRAZY","note":"","profile":"一见到风就开始抽搐..不省人事"},
+{"id":3,"battlerName":"Actor3_7","characterIndex":6,"characterName":"Actor3","classId":1,"equips":[0,0,0,0,0],"faceIndex":6,"faceName":"Actor3","traits":[],"initialLevel":1,"maxLevel":99,"name":"中国BOY","nickname":"中国BOY","note":"","profile":"一只猩猩。"},
+{"id":4,"battlerName":"Actor2_1","characterIndex":0,"characterName":"Actor2","classId":1,"equips":[0,0,0,0,0],"faceIndex":0,"faceName":"Actor2","traits":[],"initialLevel":1,"maxLevel":99,"name":"舍长","nickname":"舍长","note":"","profile":"帅气英俊，胆子特别大。"},
+{"id":5,"battlerName":"Actor1_2","characterIndex":1,"characterName":"Actor1","classId":1,"equips":[0,0,0,0,0],"faceIndex":1,"faceName":"Actor1","traits":[],"initialLevel":1,"maxLevel":99,"name":"湾湾","nickname":"湾湾","note":"","profile":"这个人很开朗，总是挺身而出，同时也很幽默。"}
+]
