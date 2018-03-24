@@ -5,6 +5,7 @@ A game by RMMV.
 We need English translation! If you want to participate in the translation program, please contact me.
 QQ:1020757140,
 项目也在gitee上发布，
-地址:https://gitee.com/ClayCoffee/snail-world.github.io。
+地址:https://gitee.com/ClayCoffee/snail-world.github.io
+
 
 
