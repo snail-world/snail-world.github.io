@@ -181,7 +181,7 @@ var PreloadManager;
     PreloadManager._filesLoaded = 0;
     PreloadManager._filesTotal = 0;
     PreloadManager._ready = false;
-    PreloadManager._preloadedMaps = [];
+    PreloadManager._preloadedMaps = [mapId];
     PreloadManager._preloadedAudio = [];
 
     PreloadManager.callOnComplete = function(func) {
