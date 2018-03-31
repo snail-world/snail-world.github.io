@@ -1,21 +1,29 @@
 //=============================================================================
 // TDDP_PreloadManager.js
-// Version: 1.0.0
+// Version: 1.1.1
 //=============================================================================
 
 var Imported = Imported || {};
-Imported.TDDP_PreloadManager = "1.0.0";
+Imported.TDDP_PreloadManager = "1.1.1";
 
 var TDDP = TDDP || {};
 TDDP.PreloadManager = TDDP.PreloadManager || {};
 //=============================================================================
 /*:
- * @plugindesc 1.0.0 Preload resources on scene/map load as well as game boot for a smoother gameplay experience.
+ * @plugindesc 1.1.1 Preload resources on scene/map load as well as game startup for a smoother gameplay experience.          id:TDDP_PreloadManager
  *
  * @author Tor Damian Design / Galenmereth
  *
+ * @param Preload On Map Load
+ * @desc If you want to preload all assets found on a map upon loading the map, set this to true.
+ * @default true
+ *
+ * @param Preload System Music
+ * @desc If you want to preload all the Music specified in the Database System tab on startup, set this to true.
+ * @default false
+ *
  * @param Preload System SFX
- * @desc If you want to preload all the SFX specified in the Database System tab on boot, set this to true.
+ * @desc If you want to preload all the SFX specified in the Database System tab on startup, set this to true.
  * @default false
  *
  * @param Print Debug to Console
@@ -25,7 +33,7 @@ TDDP.PreloadManager = TDDP.PreloadManager || {};
  * @help =~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~
  * Introduction / Table of contents
  * =~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~=~
- * TDDP PreloadManager lets you preload resources on both boot (before the
+ * TDDP PreloadManager lets you preload resources on both startup (before the
  * game title screen displays) and on map load (in between map transfers) to
  * ensure resources such as pictures, music and sound effects are preloaded
  * before called.
@@ -165,12 +173,17 @@ TDDP.bootPreloadME = [
 //=============================================================================
 var PreloadManager;
 (function() {
+    "use strict";
+    // Skip preloading if event test
+    if (DataManager.isEventTest()) return;
     //=============================================================================
     // Setting up parameters
     //=============================================================================
-    var parameters          = PluginManager.parameters('TDDP_PreloadManager');
-    var preloadSystemSFX    = Boolean(parameters['Preload System SFX'] === 'true' || false);
-    var debug               = Boolean(parameters['Print Debug to Console'] === 'true' || false);
+    var parameters         = $plugins.filter(function(p){return p.description.contains("id:TDDP_PreloadManager")})[0].parameters;
+    var preloadOnMapLoad   = Boolean(parameters['Preload On Map Load']       === 'true' || false);
+    var preloadSystemMusic = Boolean(parameters['Preload System Music']      === 'true' || false);
+    var preloadSystemSFX   = Boolean(parameters['Preload System SFX']        === 'true' || false);
+    var debug              = Boolean(parameters['Print Debug to Console']    === 'true' || false);
     if(debug) console.log("========= TDDP PreloadManager: Debug mode on =========")
 
     PreloadManager = function() {
@@ -181,8 +194,9 @@ var PreloadManager;
     PreloadManager._filesLoaded = 0;
     PreloadManager._filesTotal = 0;
     PreloadManager._ready = false;
-    PreloadManager._preloadedMaps = [mapId];
+    PreloadManager._preloadedMaps = [];
     PreloadManager._preloadedAudio = [];
+    PreloadManager._sessionRequestedImages = [];
 
     PreloadManager.callOnComplete = function(func) {
         this._callOnComplete = func;
@@ -190,8 +204,32 @@ var PreloadManager;
 
     PreloadManager.start = function() {
         this._ready = true;
+        this._sessionRequestedImages = [];
         this.controlIfReady(true);
-    }
+    };
+
+    PreloadManager._projectPath = function() {
+        var path = window.location.pathname.replace(/\/[^\/]*$/, "/");
+        if (path.match(/^\/([A-Z]\:)/)) {
+            path = path.slice(1);
+        }
+        return decodeURIComponent(path);
+    };
+
+    PreloadManager.controlAudioFileExistence = function(folder, filename) {
+        this.controlFileExistence("audio/" + folder + "/", filename, [".m4a", ".ogg"]);
+    };
+
+    PreloadManager.controlFileExistence = function(folder, filename, extensions) {
+        if (StorageManager.isLocalMode() && Utils.isOptionValid('test')) {
+            var fs = require("fs");
+            var path = this._projectPath() + folder + filename;
+            for (var i=0, max=extensions.length; i < max; i++) {
+                if (fs.existsSync(path + extensions[i])) return true;
+            }
+            throw new Error("PreloadManager: File " + folder + filename + " could not be found. Does it exist?")
+        }
+    };
 
     PreloadManager.preloadImages = function(type, filename, hue) {
         if(filename.constructor === Array) {
@@ -200,7 +238,7 @@ var PreloadManager;
             }
         } else {
             if(filename.length > 0) {
-                if(debug) console.log("Preloading image (" + type + "): ", filename);
+                if (this._isImageRequested(type, filename)) return;
                 var func = "load" + type.charAt(0).toUpperCase() + type.substr(1).toLowerCase();
                 if(typeof ImageManager[func] === 'undefined') {
                     e = "PreloadManager: " + type + " is not a valid image load key. Check your configuration.";
@@ -208,8 +246,8 @@ var PreloadManager;
                     throw new Error(e);
                 }
                 this._increaseFileNums();
-                ImageManager[func](filename, hue)
-                    .addLoadListener(this.onFileLoaded.bind(this, filename));
+                ImageManager[func](filename, hue).addLoadListener(this.onFileLoaded.bind(this, "(" + type + ") " + filename));
+                this._registerRequestedImage(type, filename);
             }
         }
     };
@@ -243,10 +281,9 @@ var PreloadManager;
                 return;
             }
             this._increaseFileNums();
+            this.controlAudioFileExistence(type, audioObject.name);
             var bufferObject = AudioManager.createBuffer(type, audioObject.name);
-            bufferObject.addLoadListener(this.onFileLoaded.bind(this, bufferObject.name));
-            bufferObject.addErrorListener(this.onAudioFileError.bind(this, bufferObject));
-            this._cacheAudio(type, audioObject.name);
+            bufferObject.addLoadListener(this.onAudioFileLoaded.bind(this, type, audioObject.name));
         }
     }
 
@@ -262,11 +299,12 @@ var PreloadManager;
     PreloadManager.preloadMapResources = function(mapId) {
         this._ready = false;
         // Wait and ensure map is loaded
-        if(!DataManager.isMapDataLoaded()) return setTimeout(this.preloadMapResources.bind(this, mapId), 250);
+        if(!DataManager.isMapDataLoaded()) return setTimeout(this.preloadMapResources.bind(this, mapId), 100);
+        var mapDebugName = mapId + " (" + $dataMapInfos[mapId].name + ")";
         if(this._preloadedMaps.indexOf(mapId) > -1) {
-            if(debug) console.log("Map " + mapId + " already preloaded, skipping.");
+            if(debug) console.log("Map " + mapDebugName + " already preloaded, skipping.");
         } else {
-            if(debug) console.log("Map " + mapId + " preload starting.");
+            if(debug) console.log("Map " + mapDebugName + " preload starting.");
             // Map is loaded, preload resources now
             this.preloadBGM($dataMap.bgm);
             this.preloadBGS($dataMap.bgs);
@@ -308,6 +346,7 @@ var PreloadManager;
             case 245:
                 this.preloadBGS(parameters[0]);
                 break;
+            // Play ME
             case 249:
                 this.preloadME(parameters[0]);
                 break;
@@ -328,7 +367,7 @@ var PreloadManager;
                 this.preloadAnimation(parameters[1]);
                 break;
         }
-    }
+    };
 
     PreloadManager.onFileLoaded = function(filename) {
         this._filesLoaded += 1;
@@ -336,8 +375,9 @@ var PreloadManager;
         this.controlIfReady();
     };
 
-    PreloadManager.onAudioFileError = function(bufferObject) {
-        throw new Error("Could not load file " + bufferObject._url);
+    PreloadManager.onAudioFileLoaded = function(type, filename) {
+        this._cacheAudio(type, filename);
+        this.onFileLoaded("(" + type + ") " + filename);
     };
 
     PreloadManager.controlIfReady = function(manual) {
@@ -352,6 +392,14 @@ var PreloadManager;
 
     PreloadManager._cacheAudio = function(path, filename) {
         this._preloadedAudio.push(path + filename);
+    };
+
+    PreloadManager._registerRequestedImage = function(type, filename) {
+        this._sessionRequestedImages.push(type + filename);
+    };
+
+    PreloadManager._isImageRequested = function(type, filename) {
+        return this._sessionRequestedImages.indexOf(type + filename) > -1;
     }
 
     PreloadManager.isAudioCached = function(path, filename) {
@@ -370,8 +418,17 @@ var PreloadManager;
             }
         }
         return false;
-    }
+    };
 
+    var _isDatabaseLoaded = function() {
+        DataManager.checkError();
+        for (var i = 0; i < DataManager._databaseFiles.length; i++) {
+            if (!window[DataManager._databaseFiles[i].name]) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     //=============================================================================
     // Scene_Boot extensions
@@ -384,7 +441,7 @@ var PreloadManager;
     };
 
     Scene_Boot.prototype._performPreload = function() {
-        if(!DataManager.isDatabaseLoaded()) return setTimeout(this._performPreload.bind(this), 5);
+        if(!_isDatabaseLoaded()) return setTimeout(this._performPreload.bind(this), 5);
         if(debug) console.log("========= TDDP PreloadManager: Boot Preload =========");
         // Preload bootPreloadImages resources
         if(TDDP.bootPreloadImages) {
@@ -436,10 +493,30 @@ var PreloadManager;
         }
         // Preload system SFX if set
         if(preloadSystemSFX) {
-            "========= TDDP PreloadManager: Boot Preloading System SFX ========="
+            if(debug) console.log("========= TDDP PreloadManager: Boot Preloading System SFX =========");
             for(var i = 0, max = $dataSystem.sounds.length; i < max; i++) {
                 PreloadManager.preloadSE($dataSystem.sounds[i]);
             }
+        }
+        // Preload system BGM and ME if set
+        if(preloadSystemMusic) {
+            if(debug) console.log("========= TDDP PreloadManager: Boot Preloading System Music =========");
+            [
+                $dataSystem.titleBgm,
+                $dataSystem.battleBgm,
+                $dataSystem.boat.bgm,
+                $dataSystem.ship.bgm,
+                $dataSystem.airship.bgm,
+            ].forEach(function(bgm) {
+                PreloadManager.preloadBGM(bgm);
+            });
+            [
+                $dataSystem.victoryMe,
+                $dataSystem.defeatMe,
+                $dataSystem.gameoverMe,
+            ].forEach(function(me) {
+                PreloadManager.preloadME(me);
+            });
         }
         PreloadManager.start();
     };
@@ -447,28 +524,30 @@ var PreloadManager;
     //=============================================================================
     // DataManager extensions
     //=============================================================================
-    var DataManager_loadMapData =
-        DataManager.loadMapData;
-    DataManager.loadMapData = function(mapId) {
-        if(debug) console.log("========= TDDP PreloadManager: Map Preload =========");
-        this._preloaded = false;
-        DataManager_loadMapData.call(this, mapId);
-        PreloadManager.preloadMapResources(mapId);
-        PreloadManager.callOnComplete(this._onPreloadDone.bind(this));
-    }
+    if (preloadOnMapLoad) {
+        var DataManager_loadMapData =
+            DataManager.loadMapData;
+        DataManager.loadMapData = function(mapId) {
+            if(debug) console.log("========= TDDP PreloadManager: Map Preload =========");
+            this._preloaded = false;
+            DataManager_loadMapData.call(this, mapId);
+            PreloadManager.preloadMapResources(mapId);
+            PreloadManager.callOnComplete(this._onPreloadDone.bind(this));
+        }
 
-    DataManager._onPreloadDone = function() {
-        this._preloaded = true;
-    }
+        DataManager._onPreloadDone = function() {
+            this._preloaded = true;
+        }
 
-    var DataManager_isMapLoaded =
-        DataManager.isMapLoaded;
-    DataManager.isMapLoaded = function() {
-        return (this.isMapDataLoaded() && this._preloaded);
-    }
+        var DataManager_isMapLoaded =
+            DataManager.isMapLoaded;
+        DataManager.isMapLoaded = function() {
+            return (this.isMapDataLoaded() && this._preloaded);
+        }
 
-    DataManager.isMapDataLoaded = function() {
-        return DataManager_isMapLoaded.call(this);
+        DataManager.isMapDataLoaded = function() {
+            return DataManager_isMapLoaded.call(this);
+        }
     }
 
     //=============================================================================
@@ -482,87 +561,43 @@ var PreloadManager;
     }
 
     //=============================================================================
-    // WebAudio extensions
+    // Html5Audio extensions
     //=============================================================================
     /**
-     * NEW function for adding error listener
-     *
-     * @method addErrorListener
-     * @param {Function} listener The callback function
-     */
-    WebAudio.prototype.addErrorListener = function(listener) {
-        this._errorListeners.push(listener);
-    };
-    /**
-     * NEW function for calling on error listeners
-     *
-     * @method onError
-     */
-    WebAudio.prototype.onError = function () {
-        while (this._errorListeners.length > 0) {
-            var listener = this._errorListeners.shift();
-            listener();
-        }
-    }
-    /**
-     * Clears the audio data.
-     *
-     * @method clear
-     */
-    TDDP.PreloadManager.WebAudio_clear = WebAudio.prototype.clear;
-    WebAudio.prototype.clear = function() {
-        TDDP.PreloadManager.WebAudio_clear.call(this);
-        this._errorListeners = [];
-    }
-    /**
-     * EXTENDED to call onError
-     * @method _load
-     * @param {String} url
-     * @private
-     */
-    WebAudio.prototype._load = function(url) {
-        if (WebAudio._context) {
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', url);
-            xhr.responseType = 'arraybuffer';
-            xhr.onload = function() {
-                if (xhr.status < 400) {
-                    this._onXhrLoad(xhr);
-                }
-            }.bind(this);
-            xhr.onerror = function() {
-                this._hasError = true;
-                this.onError(); // NEW call
-            }.bind(this);
-            xhr.send();
-        }
-    };
-    //=============================================================================
-    // HTML5Audio extensions
-    //=============================================================================
-    /**
-     * EXTENDED Clears the audio data.
+     * Sets up the Html5 Audio.
      *
      * @static
-     * @method clear
+     * @method setup
+     * @param {String} url The url of the audio file
      */
-    TDDP.PreloadManager.Html5Audio_clear = Html5Audio.clear;
-    Html5Audio.clear = function () {
-        TDDP.PreloadManager.Html5Audio_clear.call(this);
-        this._errorListeners = [];
+    Html5Audio.setup = function (url) {
+        if (!this._initialized) {
+            this.initialize();
+        }
+        this.clear();
+        this._load(url); // Changed from this._url = url to call the _load func; this func is never loaded by default
     };
+
     /**
-     * EXTENDED Calls error listeners
      * @static
-     * @method _onError
+     * @method _setupEventHandlers
      * @private
      */
-    TDDP.PreloadManager.Html5Audio__onError = Html5Audio._onError;
-    Html5Audio._onError = function () {
-        TDDP.PreloadManager.Html5Audio__onError.call(this);
-        while (this._errorListeners.length > 0) {
-            var listener = this._errorListeners.shift();
-            listener();
-        }
+    Html5Audio._setupEventHandlers = function () {
+        document.addEventListener('touchstart', this._onTouchStart.bind(this));
+        document.addEventListener('visibilitychange', this._onVisibilityChange.bind(this));
+        this._audioElement.addEventListener("canplaythrough", this._onLoadedData.bind(this)); // Changed from loaddata to canplaythrough, so it knows streaming is stable enough
+        this._audioElement.addEventListener("error", this._onError.bind(this));
+        this._audioElement.addEventListener("ended", this._onEnded.bind(this));
+    };
+
+    /**
+     * @static
+     * @method _onLoadedData
+     * @private
+     */
+    Html5Audio._onLoadedData = function () {
+        this._buffered = true;
+        this._onLoad(); // I removed check for this._unlocked because that shouldn't matter
     };
 })();
